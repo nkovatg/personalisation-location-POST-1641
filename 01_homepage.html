@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Homepage – Near you prototype (v17)</title>
+<title>Homepage – Near you prototype (v20)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
@@ -374,12 +374,16 @@ img{display:block}
 /* ===== Near you ===== */
 .nearyou{margin-bottom:32px;position:relative}
 .nearyou .head{display:flex;align-items:center;gap:24px;height:48px;position:relative}
-.nearyou .head .ctrls{display:flex;gap:12px;align-items:center;position:relative}
+.nearyou .head .ctrls{display:flex;gap:0;align-items:center;position:relative}
+/* locate button collapses smoothly; dropdown slides into its place */
+.pin-wrap{flex:none;display:flex;max-width:200px;margin-right:12px;opacity:1;overflow:hidden;transition:max-width .35s cubic-bezier(.4,0,.2,1),margin-right .35s cubic-bezier(.4,0,.2,1),opacity .2s ease}
+.pin-wrap.collapsed{max-width:0;margin-right:0;opacity:0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.pin-wrap{transition:none}}
 .nearyou .head .see{margin-left:auto}
 .nearyou .ny-body{margin-top:24px;height:305px;position:relative}
 .m .nearyou .head{flex-direction:column;align-items:stretch;gap:16px;height:auto}
 .m .nearyou .titlerow{display:flex;justify-content:space-between;align-items:center}
-.m .nearyou .head .ctrls{gap:8px} /* same as genre chips */
+.m .nearyou .head .ctrls{gap:0} .m .pin-wrap{margin-right:8px} .m .pin-wrap.collapsed{margin-right:0} /* same as genre chips */
 .m .nearyou .head .ctrls .bd-select{flex:1;position:static}
 .m .nearyou .head .ctrls .bd-menu{top:52px;left:0;right:0}
 .m .nearyou .ny-body{height:305px}
@@ -565,15 +569,12 @@ img{display:block}
       <button data-browser="edge" aria-pressed="false">Edge</button>
     </div>
     <p>Changes the native location prompt and browser UI.</p></section>
-  <section id="btnModeSec"><h6>Locate-me button</h6>
+  <section id="btnModeSec" hidden><h6>Locate-me button</h6>
     <div class="seg seg-col" id="btnModeSeg" style="grid-template-columns:1fr">
       <button data-mode="pin" aria-pressed="true">Standard pin (all browsers)</button>
       <button data-mode="pepc" aria-pressed="false">Chrome 144+ &lt;geolocation&gt;</button>
     </div>
     <p id="btnModeNote">Chrome draws its own “Use location” button. If the user blocked location, tapping it opens Chrome’s recovery prompt on the page. Prompt shown here is illustrative – check it on Chrome 144+.</p></section>
-  <section><h6><label for="simLoc">Device location</label></h6>
-    <select class="proto-select" id="simLoc"></select>
-    <p>Where the browser says the user is when they allow location.</p></section>
   <section><h6>Current state</h6><div class="proto-status" id="status"></div></section>
   <section class="side-foot"><button class="proto-reset" id="resetBtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reset prototype</button>
   <p>Clears location, permission and selections — back to a first visit.</p></section>
@@ -720,7 +721,7 @@ const TABS=[['All',null],['Plays','plays'],['Musicals','musicals'],['Comedy','co
 const START = {};
 const initial = () => Object.assign(_base(), START);
 const _base = () => ({
-  device:S?.device||'desktop', browser:S?.browser||'chrome', btnMode:S?.btnMode||'pin', simLoc:S?.simLoc||'Birmingham',
+  device:S?.device||'desktop', browser:S?.browser||'chrome', btnMode:'pin', simLoc:'',   // '' = device location not set yet
   page:'home',
   perm:'prompt',          // prompt | granted-once | granted-always | denied
   geo:'idle',             // idle | asking | locating
@@ -731,7 +732,7 @@ const _base = () => ({
   notice:false, tab:'All', miniPop:false
 });
 let S=null; S=initial();
-let toastT=null, locT=null;
+let toastT=null, locT=null, lastPinHidden=null, pinAnim=null;
 
 /* ==================== helpers ==================== */
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -800,6 +801,11 @@ function NearYou(){
   const loading=S.geo!=='idle';
   const usingGeo=S.source==='geo'&&set&&!loading;
   const pepc=usePepc(), blocked=S.perm==='denied';
+  /* hide the locate button once the user has allowed location and it has been found (pin stays, with spinner, while locating) */
+  const pinHidden=(S.perm==='granted-once'||S.perm==='granted-always') && !loading && set;
+  const anim=pinHidden!==lastPinHidden && lastPinHidden!==null;   // state changed since last render → animate
+  pinAnim=anim?(pinHidden?'out':'in'):null; lastPinHidden=pinHidden;
+  const wrapCls=anim?(pinHidden?'':'collapsed'):(pinHidden?'collapsed':'');
   const pinBtn=pepc
     ? `<button class="geo-el ${usingGeo?'is-granted':''} ${loading?'is-loading':''}" id="pepcBtn" data-act="pepc" aria-label="Use location" title="Chrome’s built-in location button">${loading?'<span class="bd-spinner"></span>':(I.pin)}<span>Use location</span></button>`
     : `<button class="bd-btn bd-btn--tertiary bd-btn--icon ${loading?'is-loading':''} ${usingGeo?'is-active':''} ${blocked&&!loading?'is-blocked':''}" data-act="geo" aria-pressed="${usingGeo}" aria-label="${blocked?'Location blocked – how to turn it on':usingGeo?'Using your current location':'Use my current location'}" title="${blocked?'Location blocked – how to turn it on':usingGeo?'Using your current location':'Use my current location'}">${loading?'<span class="bd-spinner"></span>':(blocked?I.pinBlocked:I.pin)}</button>`;
@@ -818,8 +824,8 @@ function NearYou(){
   }
   const notice='';
 
-  if(isM()) return `<section class="nearyou"><div class="head"><div class="titlerow"><h2 class="section-title">Near you</h2>${see}</div><div class="ctrls">${pinBtn}${select}</div></div>${notice}<div class="ny-body">${body}</div></section>`;
-  return `<section class="nearyou"><div class="head"><h2 class="section-title">Near you</h2><div class="ctrls">${pinBtn}${select}</div>${see}</div>${notice}<div class="ny-body">${body}</div></section>`;
+  if(isM()) return `<section class="nearyou"><div class="head"><div class="titlerow"><h2 class="section-title">Near you</h2>${see}</div><div class="ctrls"><div class="pin-wrap ${wrapCls}" ${pinHidden?'aria-hidden="true" inert':''}>${pinBtn}</div>${select}</div></div>${notice}<div class="ny-body">${body}</div></section>`;
+  return `<section class="nearyou"><div class="head"><h2 class="section-title">Near you</h2><div class="ctrls"><div class="pin-wrap ${wrapCls}" ${pinHidden?'aria-hidden="true" inert':''}>${pinBtn}</div>${select}</div>${see}</div>${notice}<div class="ny-body">${body}</div></section>`;
 }
 function Newly(){
   return `<section class="row"><div class="row-head"><h2 class="section-title">Newly added</h2><a class="bd-link" data-act="oos">See all</a></div>
@@ -993,6 +999,8 @@ function render(){
   const hs={}; site.querySelectorAll('[data-hs]').forEach(el=>hs[el.dataset.hs]=el.scrollLeft);
   site.innerHTML=S.page==='home'?Home():SRP();
   if(vp) vp.scrollTop=keepY;
+  if(pinAnim){ const w=site.querySelector('.pin-wrap'); const a=pinAnim; pinAnim=null;
+    if(w) requestAnimationFrame(()=>requestAnimationFrame(()=>w.classList.toggle('collapsed',a==='out'))); }
   site.querySelectorAll('[data-hs]').forEach(el=>{ if(hs[el.dataset.hs]!=null) el.scrollLeft=hs[el.dataset.hs]; });
   // chrome bits
   const chromeEl=document.getElementById('chromeSlot');
@@ -1055,13 +1063,13 @@ stage.addEventListener('scroll',()=>{stage.scrollTop=0;stage.scrollLeft=0;});
 function renderStatus(){
   const p=S.perm, cls=p==='denied'?'bad':p==='prompt'?'ask':'ok';
   const src=S.sel.length?(S.source==='geo'?'from device location':'chosen manually'):'not set';
-  document.getElementById('status').innerHTML=`<div class="chip ${cls}"><i></i>Location permission: <b>${permLabel()}</b></div><div class="chip"><i style="background:${S.sel.length?'#5a00ff':'#9ca3af'}"></i>Near you: <b>${S.sel.length?esc(S.sel.join(', ')):'not set'}</b>${S.sel.length?`<br><span style="opacity:.6;margin-left:13px">${src}</span>`:''}</div><div class="chip"><i style="background:#9ca3af"></i>Page: <b>${S.page==='home'?'Homepage':'What’s on near you'}</b></div>`;
+  const dev=S.simLoc;
+  document.getElementById('status').innerHTML=`<div class="chip ${dev?'ok':''}"><i></i>Device location: <b>${dev?esc(dev):'Not set'}</b>${dev?'<br><span style="opacity:.6;margin-left:13px">shared by the browser</span>':''}</div><div class="chip ${cls}"><i></i>Location permission: <b>${permLabel()}</b></div><div class="chip"><i style="background:${S.sel.length?'#5a00ff':'#9ca3af'}"></i>Near you: <b>${S.sel.length?esc(S.sel.join(', ')):'not set'}</b>${S.sel.length?`<br><span style="opacity:.6;margin-left:13px">${src}</span>`:''}</div><div class="chip"><i style="background:#9ca3af"></i>Page: <b>${S.page==='home'?'Homepage':'What’s on near you'}</b></div>`;
   document.querySelectorAll('#btnModeSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===S.btnMode));
   document.getElementById('btnModeSec').classList.toggle('dim',S.browser!=='chrome');
   document.getElementById('btnModeNote').textContent=S.browser!=='chrome'?'Only Chrome 144+ has the <geolocation> button. '+({safari:'Safari',firefox:'Firefox',edge:'Edge'}[S.browser])+' gets the standard pin, which can’t reopen a blocked prompt.':'Chrome draws its own “Use location” button. If the user blocked location, tapping it opens Chrome’s recovery prompt on the page. Prompt shown here is illustrative – check it on Chrome 144+.';
   document.querySelectorAll('#deviceSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.device===S.device));
   document.querySelectorAll('#browserSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.browser===S.browser));
-  document.getElementById('simLoc').value=S.simLoc;
 }
 function toast(msg){
   clearTimeout(toastT);
@@ -1112,7 +1120,7 @@ function requestLocation(){
 function locate(){
   S.geo='locating'; S.prompt=false; render();
   clearTimeout(locT);
-  locT=setTimeout(()=>{S.geo='idle'; S.sel=[S.simLoc]; S.source='geo'; render();},1100);
+  locT=setTimeout(()=>{S.geo='idle'; S.simLoc=S.simLoc||'Birmingham'; S.sel=[S.simLoc]; S.source='geo'; render();},1100);
 }
 function answer(kind){
   if(kind==='dismiss'){ S.prompt=false; S.geo='idle'; render(); return; }
@@ -1185,10 +1193,7 @@ function reload(){
 document.getElementById('deviceSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.device=b.dataset.device;S.menu=null;S.miniPop=false;render();});
 document.getElementById('browserSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.browser=b.dataset.browser;S.miniPop=false;if(S.prompt==='pepc'&&b.dataset.browser!=='chrome'){S.prompt=false;S.geo='idle';}render();});
 document.getElementById('btnModeSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.btnMode=b.dataset.mode;S.prompt=false;S.geo='idle';S.notice=false;render();});
-const simSel=document.getElementById('simLoc');
-simSel.innerHTML=LOCS.map(l=>`<option>${l.name}</option>`).join('');
-simSel.addEventListener('change',()=>{S.simLoc=simSel.value;render();});
-document.getElementById('resetBtn').addEventListener('click',()=>{clearTimeout(locT);S=initial();lastShell='';render();scrollTop();toast('Prototype reset');});
+document.getElementById('resetBtn').addEventListener('click',()=>{clearTimeout(locT);S=initial();lastShell='';lastPinHidden=null;render();scrollTop();toast('Prototype reset');});
 
 render();
 </script>
